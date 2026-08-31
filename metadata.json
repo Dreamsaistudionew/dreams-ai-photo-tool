@@ -1,0 +1,6 @@
+{
+  "name": "DREAMS AI",
+  "description": "Lossless 4:5 photo color tone processing, master logo compositing, original resolution preservation, and 300 DPI metadata export.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
