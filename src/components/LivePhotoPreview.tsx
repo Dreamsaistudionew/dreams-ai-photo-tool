@@ -120,10 +120,22 @@ export const LivePhotoPreview: React.FC<LivePhotoPreviewProps> = ({
             {/* Subtle Vignette Overlay for Depth */}
             <div className="absolute inset-0 pointer-events-none bg-gradient-to-t from-black/20 via-transparent to-black/10" />
 
+            {/* French Tricolor Strip (Absolute bottom edge, full width, 3 equal sections: Blue #0055A4 | White #FFFFFF | Red #EF4135) */}
+            <div
+              className="absolute bottom-0 left-0 right-0 w-full pointer-events-none flex z-10"
+              style={{
+                height: `${Math.max(2, Math.round(containerSize.height * 0.008))}px`,
+              }}
+            >
+              <div className="flex-1 h-full bg-[#0055A4]" />
+              <div className="flex-1 h-full bg-[#FFFFFF]" />
+              <div className="flex-1 h-full bg-[#EF4135]" />
+            </div>
+
             {/* Master Composited Logo (Hidden when comparing original) */}
             {logo && !isComparingOriginal && logoRect && (
               <div
-                className="absolute pointer-events-none transition-all duration-150"
+                className="absolute pointer-events-none transition-all duration-150 z-20"
                 style={{
                   left: `${logoRect.x}px`,
                   top: `${logoRect.y}px`,
@@ -142,7 +154,7 @@ export const LivePhotoPreview: React.FC<LivePhotoPreviewProps> = ({
             )}
 
             {/* Floating Active Preset Badge (Bottom Left of Photo) */}
-            <div className="absolute bottom-2.5 left-2.5 pointer-events-none flex items-center gap-1.5 px-2 py-1 rounded bg-[#121316]/80 backdrop-blur-md border border-white/10 text-[10px] text-[#f4f3ef] font-medium tracking-wide">
+            <div className="absolute bottom-3 left-2.5 pointer-events-none flex items-center gap-1.5 px-2 py-1 rounded bg-[#121316]/80 backdrop-blur-md border border-white/10 text-[10px] text-[#f4f3ef] font-medium tracking-wide z-30">
               <Sparkles className="w-3 h-3 text-[#d4af37]" />
               <span>{isComparingOriginal ? 'Original (Untouched)' : activePreset.name}</span>
             </div>

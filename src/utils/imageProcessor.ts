@@ -198,6 +198,47 @@ export interface RenderPipelineOptions {
 }
 
 /**
+ * Draws the French tricolor strip at the absolute bottom edge of the canvas.
+ * - Width: Spans full width from left edge to right edge (0 to canvas.width)
+ * - Height: ~0.8% of canvas height (Math.max(1, Math.round(canvasHeight * 0.008)))
+ * - Position: y = canvasHeight - stripHeight
+ * - Three equal vertical sections: Left French Blue (#0055A4) | Center White (#FFFFFF) | Right French Red (#EF4135)
+ * - Exact pixel boundaries to eliminate subpixel gaps or overlaps
+ * - Zero margins, rounded corners, shadows, gradients, or transparency
+ */
+export function drawFrenchTricolorStrip(
+  ctx: CanvasRenderingContext2D,
+  canvasWidth: number,
+  canvasHeight: number
+): void {
+  const stripHeight = Math.max(1, Math.round(canvasHeight * 0.008));
+  const y = canvasHeight - stripHeight;
+
+  // Exact partition boundaries ensuring 100% full width coverage with 0px gaps
+  const x1 = Math.round(canvasWidth / 3);
+  const x2 = Math.round((canvasWidth * 2) / 3);
+
+  ctx.save();
+  ctx.filter = 'none';
+  ctx.globalAlpha = 1.0;
+  ctx.imageSmoothingEnabled = false;
+
+  // 1. Left: French Blue (#0055A4)
+  ctx.fillStyle = '#0055A4';
+  ctx.fillRect(0, y, x1, stripHeight);
+
+  // 2. Center: White (#FFFFFF)
+  ctx.fillStyle = '#FFFFFF';
+  ctx.fillRect(x1, y, x2 - x1, stripHeight);
+
+  // 3. Right: French Red (#EF4135)
+  ctx.fillStyle = '#EF4135';
+  ctx.fillRect(x2, y, canvasWidth - x2, stripHeight);
+
+  ctx.restore();
+}
+
+/**
  * Main Deterministic High-Fidelity Render Pipeline
  *
  * CRITICAL FIDELITY & ENLARGEMENT PRINCIPLES:
@@ -239,22 +280,6 @@ export async function renderMasterCompositePNG({
 
   const effectiveLogoSource = logoSource !== undefined ? logoSource : logoSrc;
   const isLogoActive = Boolean(effectiveLogoSource && placement.opacity > 0);
-
-  // CASE 1: DIRECT BIT-FOR-BIT PASSTHROUGH FOR ORIGINAL PNGs WITHOUT LOGO (Original mode or already 4K)
-  if (presetId === 'original' && !isLogoActive) {
-    const sourceBuffer = await getSourceArrayBuffer(effectivePhotoSource);
-    if (sourceBuffer && isPngBuffer(sourceBuffer)) {
-      const meta = await verifyPngMetadata(sourceBuffer);
-      const isAlready4K = meta.width === targetWidth && meta.height === targetHeight;
-      if (exportMode === 'original' || (exportMode === '4k' && isAlready4K)) {
-        onProgress?.(40, 'Preserving 100% original pixel data bit-for-bit without re-encoding...');
-        onProgress?.(80, `Injecting ${targetDpi} PPI resolution metadata...`);
-        const finalPngBytes = setPngDpi(sourceBuffer, targetDpi);
-        onProgress?.(100, `Lossless PNG ready (100% Bit-for-bit original pixels, ${targetDpi} DPI).`);
-        return new Blob([finalPngBytes], { type: 'image/png' });
-      }
-    }
-  }
 
   onProgress?.(15, 'Accessing full-resolution original photograph source...');
   const { drawable: photoDrawable, width: sourceWidth, height: sourceHeight, cleanup: cleanupPhoto } =
@@ -346,6 +371,10 @@ export async function renderMasterCompositePNG({
   // Reset filter state
   ctx.filter = 'none';
   cleanupPhoto();
+
+  // Overlay French tricolor strip at the absolute bottom edge of the image
+  onProgress?.(68, 'Drawing subtle French tricolor strip at bottom edge...');
+  drawFrenchTricolorStrip(ctx, finalWidth, finalHeight);
 
   // Composite Master Logo directly at final resolution coordinates if active
   if (isLogoActive && effectiveLogoSource) {
