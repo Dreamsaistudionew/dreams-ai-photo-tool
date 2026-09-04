@@ -1,7 +1,8 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { ColorPresetId, LoadedImage, LogoPlacement } from '../types';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
+import { ColorPresetId, LoadedImage, LogoPlacement, CountryId, TemplateId, HookTextConfig, Adjustments } from '../types';
 import { COLOR_PRESETS } from '../utils/colorPresets';
-import { calculateLogoRect } from '../utils/imageProcessor';
+import { calculateLogoRect, getStyledSpans } from '../utils/imageProcessor';
+import { countryFlags } from '../utils/countryFlags';
 import { Eye, EyeOff, Sparkles, Image as ImageIcon } from 'lucide-react';
 
 interface LivePhotoPreviewProps {
@@ -9,6 +10,10 @@ interface LivePhotoPreviewProps {
   logo: LoadedImage | null;
   selectedPreset: ColorPresetId;
   logoPlacement: LogoPlacement;
+  selectedCountry?: CountryId;
+  templateId?: TemplateId;
+  hookText?: HookTextConfig;
+  adjustments?: Adjustments;
   onOpenUploadPhoto?: () => void;
 }
 
@@ -17,13 +22,23 @@ export const LivePhotoPreview: React.FC<LivePhotoPreviewProps> = ({
   logo,
   selectedPreset,
   logoPlacement,
+  selectedCountry = 'france',
+  templateId = 'classic',
+  hookText,
+  adjustments,
   onOpenUploadPhoto,
 }) => {
   const [isComparingOriginal, setIsComparingOriginal] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerSize, setContainerSize] = useState({ width: 400, height: 500 });
 
-  // Update container pixel dimensions for accurate logo rendering in preview
+  // Dynamically sampled background tone from the photo
+  const [sampledTone, setSampledTone] = useState<{ overlayRgba: string; lum: number }>({
+    overlayRgba: 'rgba(12, 14, 18, 0.68)',
+    lum: 30,
+  });
+
+  // Update container pixel dimensions
   useEffect(() => {
     if (!containerRef.current) return;
     const observer = new ResizeObserver((entries) => {
@@ -39,12 +54,96 @@ export const LivePhotoPreview: React.FC<LivePhotoPreviewProps> = ({
   }, []);
 
   const activePreset = COLOR_PRESETS.find((p) => p.id === selectedPreset) || COLOR_PRESETS[0];
+  const currentCountryConfig = countryFlags[selectedCountry] || countryFlags.france;
+  const isFacebook = templateId === 'facebook';
 
-  // Calculate logo position for preview
+  // Compute active filter for preview (brightness/contrast for Text Master, or preset for Existing)
+  const activeFilter = useMemo(() => {
+    if (isFacebook) {
+      const b = adjustments?.brightness ?? 100;
+      const c = adjustments?.contrast ?? 100;
+      if (b !== 100 || c !== 100) {
+        return `brightness(${b}%) contrast(${c}%)`;
+      }
+      return 'none';
+    }
+    return activePreset.cssFilter;
+  }, [isFacebook, adjustments?.brightness, adjustments?.contrast, activePreset.cssFilter]);
+
+  // Analyze and sample the photo's lower region for natural adaptive background
+  useEffect(() => {
+    if (!photo?.src) return;
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.src = photo.src;
+    img.onload = () => {
+      try {
+        const sampleCanvas = document.createElement('canvas');
+        sampleCanvas.width = 64;
+        sampleCanvas.height = 64;
+        const ctx = sampleCanvas.getContext('2d');
+        if (!ctx) return;
+        if (activeFilter && activeFilter !== 'none') {
+          ctx.filter = activeFilter;
+        }
+        ctx.drawImage(img, 0, 0, 64, 64);
+        // Sample bottom 15% where the hook strip is placed
+        const startY = Math.floor(64 * 0.82);
+        const sampleH = Math.max(1, 64 - startY);
+        const imgData = ctx.getImageData(0, startY, 64, sampleH);
+        const d = imgData.data;
+        let r = 0,
+          g = 0,
+          b = 0,
+          count = 0;
+        for (let i = 0; i < d.length; i += 4) {
+          r += d[i];
+          g += d[i + 1];
+          b += d[i + 2];
+          count++;
+        }
+        const avgR = count > 0 ? r / count : 20;
+        const avgG = count > 0 ? g / count : 20;
+        const avgB = count > 0 ? b / count : 20;
+        const lum = 0.299 * avgR + 0.587 * avgG + 0.114 * avgB;
+
+        let overlayRgba: string;
+        if (lum > 130) {
+          // Light photo background: darker translucent overlay for high contrast
+          const tintR = Math.round(avgR * 0.10);
+          const tintG = Math.round(avgG * 0.10);
+          const tintB = Math.round(avgB * 0.10);
+          overlayRgba = `rgba(${tintR}, ${tintG}, ${tintB}, 0.74)`;
+        } else {
+          // Dark photo background: translucent tint retaining photo tone
+          const tintR = Math.round(avgR * 0.35);
+          const tintG = Math.round(avgG * 0.35);
+          const tintB = Math.round(avgB * 0.35);
+          overlayRgba = `rgba(${tintR}, ${tintG}, ${tintB}, 0.65)`;
+        }
+        setSampledTone({ overlayRgba, lum });
+      } catch {
+        // Fallback
+      }
+    };
+  }, [photo?.src, activeFilter]);
+
+  // EXACT same flag color strip size across BOTH templates (0.8% of preview height)
+  const colorStripHeight = Math.max(2, Math.round(containerSize.height * 0.008));
+  const textStripHeight = isFacebook
+    ? Math.max(34, Math.round(containerSize.height * 0.082))
+    : 0;
+
+  // Resolve styled spans for Facebook hook text
+  const styledSpans = useMemo(() => {
+    return getStyledSpans(hookText);
+  }, [hookText]);
+
+  // Calculate logo position for preview within the photograph
   const logoRect = logo
     ? calculateLogoRect(
         containerSize.width,
-        containerSize.height,
+        containerSize.height - (isFacebook ? textStripHeight + colorStripHeight : colorStripHeight),
         logo.width || 200,
         logo.height || 200,
         logoPlacement
@@ -58,7 +157,7 @@ export const LivePhotoPreview: React.FC<LivePhotoPreviewProps> = ({
         <div className="flex items-center gap-2">
           <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium tracking-wide bg-[#1e2127] border border-[#2f343e] text-[#d4af37]">
             <span className="w-1.5 h-1.5 rounded-full bg-[#d4af37] animate-pulse"></span>
-            LIVE PREVIEW (4:5)
+            LIVE PREVIEW {isFacebook ? '(TEXT MASTER)' : '(EXISTING TEMPLATE)'}
           </span>
           {photo && (
             <span className="text-[11px] text-[#9ba1a6] hidden sm:inline">
@@ -99,43 +198,32 @@ export const LivePhotoPreview: React.FC<LivePhotoPreviewProps> = ({
         )}
       </div>
 
-      {/* Main 4:5 Large Preview Stage */}
+      {/* Main Large Preview Stage */}
       <div
         ref={containerRef}
-        className="relative w-full max-w-[460px] aspect-[4/5] bg-[#16181d] rounded-xl overflow-hidden border border-[#2a2e38] shadow-2xl flex items-center justify-center group select-none"
+        id="preview-stage-container"
+        className="relative w-full max-w-[460px] aspect-[4/5] bg-[#16181d] rounded-xl overflow-hidden border border-[#2a2e38] shadow-2xl flex flex-col justify-between group select-none"
       >
         {photo ? (
-          <>
-            {/* The Photo with active Preset CSS Filter (or None if comparing) */}
+          <div className="relative w-full h-full overflow-hidden">
+            {/* 1. PHOTOGRAPH (Extends down to the flag strip; visible underneath the semi-transparent text strip) */}
             <img
               src={photo.src}
-              alt="Live 4:5 Photograph"
-              className="absolute inset-0 w-full h-full object-cover transition-[filter] duration-200"
+              alt="Live Photograph"
+              className="w-full h-full object-cover transition-[filter] duration-200"
               style={{
-                filter: isComparingOriginal ? 'none' : activePreset.cssFilter,
+                filter: isComparingOriginal ? 'none' : activeFilter,
               }}
               draggable={false}
             />
 
-            {/* Subtle Vignette Overlay for Depth */}
+            {/* Subtle Vignette Overlay */}
             <div className="absolute inset-0 pointer-events-none bg-gradient-to-t from-black/20 via-transparent to-black/10" />
-
-            {/* French Tricolor Strip (Absolute bottom edge, full width, 3 equal sections: Blue #0055A4 | White #FFFFFF | Red #EF4135) */}
-            <div
-              className="absolute bottom-0 left-0 right-0 w-full pointer-events-none flex z-10"
-              style={{
-                height: `${Math.max(2, Math.round(containerSize.height * 0.008))}px`,
-              }}
-            >
-              <div className="flex-1 h-full bg-[#0055A4]" />
-              <div className="flex-1 h-full bg-[#FFFFFF]" />
-              <div className="flex-1 h-full bg-[#EF4135]" />
-            </div>
 
             {/* Master Composited Logo (Hidden when comparing original) */}
             {logo && !isComparingOriginal && logoRect && (
               <div
-                className="absolute pointer-events-none transition-all duration-150 z-20"
+                className="absolute pointer-events-none transition-all duration-150 z-10"
                 style={{
                   left: `${logoRect.x}px`,
                   top: `${logoRect.y}px`,
@@ -153,12 +241,80 @@ export const LivePhotoPreview: React.FC<LivePhotoPreviewProps> = ({
               </div>
             )}
 
-            {/* Floating Active Preset Badge (Bottom Left of Photo) */}
-            <div className="absolute bottom-3 left-2.5 pointer-events-none flex items-center gap-1.5 px-2 py-1 rounded bg-[#121316]/80 backdrop-blur-md border border-white/10 text-[10px] text-[#f4f3ef] font-medium tracking-wide z-30">
-              <Sparkles className="w-3 h-3 text-[#d4af37]" />
-              <span>{isComparingOriginal ? 'Original (Untouched)' : activePreset.name}</span>
+            {/* Floating Preset & Country Color Strip Badge */}
+            <div className="absolute top-2.5 left-2.5 pointer-events-none flex items-center gap-2 px-2.5 py-1 rounded bg-[#121316]/85 backdrop-blur-md border border-white/10 text-[10px] text-[#f4f3ef] font-medium tracking-wide z-30 shadow-lg">
+              <div className="flex items-center gap-1.5">
+                <Sparkles className="w-3 h-3 text-[#d4af37]" />
+                <span>
+                  {isComparingOriginal
+                    ? 'Original (Untouched)'
+                    : isFacebook
+                    ? 'Text Master'
+                    : activePreset.name}
+                </span>
+              </div>
+              <span className="text-white/20">|</span>
+              <div className="flex items-center gap-1.5">
+                <div className="flex h-2 w-3.5 rounded-xs overflow-hidden border border-white/20">
+                  {currentCountryConfig.colors.map((c, i) => (
+                    <div key={i} className="flex-1 h-full" style={{ backgroundColor: c }} />
+                  ))}
+                </div>
+                <span className="text-[#e1e4ea]">{currentCountryConfig.name}</span>
+              </div>
             </div>
-          </>
+
+            {/* 2. TEXT MASTER STRIP (Semi-transparent overlay sampled from photo, positioned directly above flag strip) */}
+            {isFacebook && (
+              <div
+                id="text-master-strip-preview"
+                className="absolute left-0 right-0 z-20 flex items-center justify-center px-3.5 text-center backdrop-blur-md transition-colors border-t border-white/10 overflow-hidden"
+                style={{
+                  bottom: `${colorStripHeight}px`,
+                  height: `${textStripHeight}px`,
+                  backgroundColor: sampledTone.overlayRgba,
+                }}
+              >
+                <div className="flex items-center justify-center flex-wrap gap-x-1.5 gap-y-0.5 max-w-full">
+                  {styledSpans.length > 0 ? (
+                    styledSpans.map((span, idx) => (
+                      <span
+                        key={idx}
+                        className="font-black text-xs sm:text-sm tracking-tight leading-tight inline-block whitespace-pre"
+                        style={{
+                          color: span.color,
+                          textShadow: '0 1px 3px rgba(0, 0, 0, 0.85), 0 2px 6px rgba(0, 0, 0, 0.5)',
+                        }}
+                      >
+                        {span.text}
+                      </span>
+                    ))
+                  ) : (
+                    <span className="text-[#9ba1a6] text-[11px] font-medium italic">
+                      [Enter Hook Strip Text Below]
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* 3. COUNTRY COLOR STRIP (Exact same height and style across both templates at absolute bottom edge) */}
+            <div
+              id="country-flag-strip-preview"
+              className="absolute bottom-0 left-0 right-0 w-full pointer-events-none flex z-30 shrink-0"
+              style={{
+                height: `${colorStripHeight}px`,
+              }}
+            >
+              {currentCountryConfig.colors.map((color, idx) => (
+                <div
+                  key={idx}
+                  className="flex-1 h-full"
+                  style={{ backgroundColor: color }}
+                />
+              ))}
+            </div>
+          </div>
         ) : (
           /* Empty / Upload Prompt State */
           <div

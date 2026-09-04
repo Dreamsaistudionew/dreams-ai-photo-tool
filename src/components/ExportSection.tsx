@@ -1,10 +1,8 @@
 import React from 'react';
-import { Download, Loader2, FileCheck, Sparkles, Image as ImageIcon } from 'lucide-react';
+import { Download, Loader2, FileCheck, Sparkles } from 'lucide-react';
 import { ExportProgress, ExportResolutionMode } from '../types';
 
 interface ExportSectionProps {
-  filename: string;
-  onFilenameChange: (val: string) => void;
   exportMode: ExportResolutionMode;
   onExportModeChange: (mode: ExportResolutionMode) => void;
   onDownloadPNG: () => void;
@@ -15,8 +13,6 @@ interface ExportSectionProps {
 }
 
 export const ExportSection: React.FC<ExportSectionProps> = ({
-  filename,
-  onFilenameChange,
   exportMode,
   onExportModeChange,
   onDownloadPNG,
@@ -30,35 +26,6 @@ export const ExportSection: React.FC<ExportSectionProps> = ({
 
   return (
     <div className="w-full mt-3 space-y-3">
-      {/* File Name Section */}
-      <div className="w-full bg-[#1a1c21] border border-[#2f343e] rounded-xl p-3 shadow-sm">
-        <div className="flex items-center justify-between mb-1.5">
-          <label
-            htmlFor="custom-filename-input"
-            className="text-[11px] font-semibold tracking-wider text-[#9ba1a6] uppercase"
-          >
-            FILE NAME
-          </label>
-          <span className="text-[10px] text-[#71767e]">
-            Auto-appends .png
-          </span>
-        </div>
-
-        <div className="relative flex items-center">
-          <input
-            id="custom-filename-input"
-            type="text"
-            value={filename}
-            onChange={(e) => onFilenameChange(e.target.value)}
-            placeholder="edited_photo"
-            className="w-full bg-[#121316] border border-[#2a2e38] focus:border-[#d4af37] focus:ring-1 focus:ring-[#d4af37] text-xs text-[#f4f3ef] font-mono px-3 py-2 rounded-lg transition-all pr-12 outline-none"
-          />
-          <span className="absolute right-3 text-[11px] font-mono text-[#71767e] pointer-events-none">
-            .png
-          </span>
-        </div>
-      </div>
-
       {/* Export Resolution Selector */}
       <div className="w-full bg-[#1a1c21] border border-[#2f343e] rounded-xl p-3 shadow-sm space-y-2">
         <div className="flex items-center justify-between">

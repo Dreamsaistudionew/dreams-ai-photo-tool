@@ -1,17 +1,32 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { ColorPresetId, LoadedImage, LogoPlacement, ExportProgress, ExportResolutionMode } from './types';
+import {
+  ColorPresetId,
+  LoadedImage,
+  LogoPlacement,
+  ExportProgress,
+  ExportResolutionMode,
+  CountryId,
+  TemplateId,
+  HookTextConfig,
+  Adjustments,
+} from './types';
 import { LivePhotoPreview } from './components/LivePhotoPreview';
+import { TemplateSelector } from './components/TemplateSelector';
+import { FacebookHookControls } from './components/FacebookHookControls';
+import { AdjustmentControls } from './components/AdjustmentControls';
 import { ColorPresetSelector } from './components/ColorPresetSelector';
+import { CountryFlagSelector } from './components/CountryFlagSelector';
 import { UploadControls } from './components/UploadControls';
 import { LogoControls } from './components/LogoControls';
 import { ExportSection } from './components/ExportSection';
+import { DownloadFilenameModal } from './components/DownloadFilenameModal';
 import {
   MASTER_LOGO_DEFAULTS,
   renderMasterCompositePNG,
-  sanitizeFilename,
   triggerBlobDownload,
   TARGET_EXPORT_DPI,
 } from './utils/imageProcessor';
+import { countryFlags } from './utils/countryFlags';
 import { detectImageDpi } from './utils/pngDpi';
 import {
   DEFAULT_PHOTO_URL,
@@ -29,8 +44,32 @@ export default function App() {
   // Logo State
   const [logo, setLogo] = useState<LoadedImage | null>(null);
 
+  // Active Template ('classic' | 'facebook')
+  const [selectedTemplate, setSelectedTemplate] = useState<TemplateId>('classic');
+
+  // Facebook Hook Text Config with single text and per-character colors
+  const [hookText, setHookText] = useState<HookTextConfig>(() => {
+    const initialText = 'NEW PRODUCT AVAILABLE TODAY';
+    const initialColors: string[] = [];
+    const firstSpace = initialText.indexOf(' ');
+    for (let i = 0; i < initialText.length; i++) {
+      initialColors.push(firstSpace > 0 && i < firstSpace ? '#FFD700' : '#FFFFFF');
+    }
+    return {
+      text: initialText,
+      charColors: initialColors,
+      part1Text: 'NEW',
+      part1Color: '#FFD700',
+      part2Text: 'PRODUCT AVAILABLE TODAY',
+      part2Color: '#FFFFFF',
+    };
+  });
+
   // Active Color Preset
   const [selectedPreset, setSelectedPreset] = useState<ColorPresetId>('original');
+
+  // Selected Country Flag for bottom strip
+  const [selectedCountry, setSelectedCountry] = useState<CountryId>('france');
 
   // Master Logo Placement Settings
   const [logoPlacement, setLogoPlacement] = useState<LogoPlacement>({ ...MASTER_LOGO_DEFAULTS });
@@ -38,8 +77,11 @@ export default function App() {
   // Export Resolution Mode ('4k' or 'original')
   const [exportMode, setExportMode] = useState<ExportResolutionMode>('4k');
 
-  // Custom File Name
-  const [filename, setFilename] = useState<string>('dreams_photo_01');
+  // Photo Brightness & Contrast Adjustments (Text Master)
+  const [adjustments, setAdjustments] = useState<Adjustments>({
+    brightness: 100,
+    contrast: 100,
+  });
 
   // Export State
   const [exportProgress, setExportProgress] = useState<ExportProgress>({
@@ -47,6 +89,11 @@ export default function App() {
     progress: 0,
     statusText: '',
   });
+
+  // Download Filename Confirmation Modal State
+  const [isFilenameModalOpen, setIsFilenameModalOpen] = useState(false);
+  const [renderedBlob, setRenderedBlob] = useState<Blob | null>(null);
+  const [suggestedFilename, setSuggestedFilename] = useState('');
 
   // Load initial demo photo & logo on first mount for immediate live preview
   useEffect(() => {
@@ -105,9 +152,6 @@ export default function App() {
         aspectRatio: img.naturalWidth / (img.naturalHeight || 1),
         detectedDpi,
       });
-      // Auto-generate clean base filename from uploaded file
-      const cleanName = file.name.replace(/\.[^/.]+$/, '').replace(/[^a-zA-Z0-9_-]/g, '_');
-      setFilename(cleanName || 'edited_photo');
     };
     img.src = objectUrl;
   }, []);
@@ -151,12 +195,24 @@ export default function App() {
       aspectRatio: 1,
     });
     setSelectedPreset('original');
+    setAdjustments({ brightness: 100, contrast: 100 });
+    setSelectedCountry('france');
+    setSelectedTemplate('classic');
+    const initialText = 'NEW PRODUCT AVAILABLE TODAY';
+    const initialColors: string[] = [];
+    const firstSpace = initialText.indexOf(' ');
+    for (let i = 0; i < initialText.length; i++) {
+      initialColors.push(firstSpace > 0 && i < firstSpace ? '#FFD700' : '#FFFFFF');
+    }
+    setHookText({
+      text: initialText,
+      charColors: initialColors,
+    });
     setLogoPlacement({ ...MASTER_LOGO_DEFAULTS });
-    setFilename('dreams_photo_01');
     setExportMode('4k');
   }, []);
 
-  // PNG Render & Export Execution (4K Master or Original Dimensions)
+  // PNG Render & Export Execution (Renders first, then prompts for filename)
   const handleDownloadPNG = useCallback(async () => {
     if (!photo) return;
 
@@ -171,8 +227,12 @@ export default function App() {
         photoSource: photo.file || photo.src,
         logoSource: logo ? (logo.file || logo.src) : null,
         presetId: selectedPreset,
+        adjustments,
         placement: logoPlacement,
         exportMode,
+        countryId: selectedCountry,
+        templateId: selectedTemplate,
+        hookText,
         targetDpi: TARGET_EXPORT_DPI,
         onProgress: (progress, statusText) => {
           setExportProgress({
@@ -183,16 +243,20 @@ export default function App() {
         },
       });
 
-      const finalFilename = sanitizeFilename(filename);
-      triggerBlobDownload(blob, finalFilename);
+      // Generate suggested default filename based on selected template and selected country
+      const countryConfig = countryFlags[selectedCountry];
+      const countryName = (countryConfig?.name || 'Country').replace(/[^a-zA-Z0-9]/g, '');
+      const templatePrefix = selectedTemplate === 'facebook' ? 'TextMaster' : 'ClassicMaster';
+      const autoFilename = `${templatePrefix}_${countryName}.png`;
 
-      setTimeout(() => {
-        setExportProgress({
-          isExporting: false,
-          progress: 100,
-          statusText: 'Download started!',
-        });
-      }, 600);
+      setRenderedBlob(blob);
+      setSuggestedFilename(autoFilename);
+      setIsFilenameModalOpen(true);
+      setExportProgress({
+        isExporting: false,
+        progress: 100,
+        statusText: 'Image rendered! Enter filename to save.',
+      });
     } catch (err) {
       console.error('Error during render export:', err);
       setExportProgress({
@@ -202,7 +266,37 @@ export default function App() {
       });
       alert('Could not render image: ' + (err instanceof Error ? err.message : String(err)));
     }
-  }, [photo, logo, selectedPreset, logoPlacement, exportMode, filename]);
+  }, [
+    photo,
+    logo,
+    selectedPreset,
+    adjustments,
+    logoPlacement,
+    exportMode,
+    selectedCountry,
+    selectedTemplate,
+    hookText,
+  ]);
+
+  // Confirm filename and trigger actual browser download
+  const handleConfirmDownload = useCallback(
+    (confirmedFilename: string) => {
+      if (!renderedBlob) return;
+      const cleanFilename = confirmedFilename.toLowerCase().endsWith('.png')
+        ? confirmedFilename
+        : `${confirmedFilename}.png`;
+
+      triggerBlobDownload(renderedBlob, cleanFilename);
+      setIsFilenameModalOpen(false);
+      setRenderedBlob(null);
+      setExportProgress({
+        isExporting: false,
+        progress: 100,
+        statusText: 'Download started!',
+      });
+    },
+    [renderedBlob]
+  );
 
   return (
     <main className="min-h-screen bg-[#121316] text-[#f4f3ef] flex flex-col items-center justify-start py-4 px-3 sm:px-4">
@@ -241,23 +335,64 @@ export default function App() {
           </button>
         </header>
 
-        {/* 1. LARGE PHOTO LIVE PREVIEW (TOP OF INTERFACE) */}
+        {/* TOP: TEMPLATE SELECTOR [TEMPLATE ▼] */}
+        <TemplateSelector
+          selectedTemplate={selectedTemplate}
+          onSelectTemplate={setSelectedTemplate}
+        />
+
+        {/* PHOTO PREVIEW (PHOTO + [TEXT STRIP IF FACEBOOK TEMPLATE] + [EXACT FLAG COLOR STRIP]) */}
         <LivePhotoPreview
           photo={photo}
           logo={logo}
           selectedPreset={selectedPreset}
           logoPlacement={logoPlacement}
+          selectedCountry={selectedCountry}
+          templateId={selectedTemplate}
+          hookText={hookText}
+          adjustments={adjustments}
           onOpenUploadPhoto={() => document.getElementById('upload-photo-btn')?.click()}
         />
 
-        {/* 2. COLOR STYLE (6 PRESETS IN ONE COMPACT ROW) */}
-        <ColorPresetSelector
-          photo={photo}
-          selectedPreset={selectedPreset}
-          onSelectPreset={setSelectedPreset}
+        {/* TEMPLATE-SPECIFIC CONTROLS */}
+        {selectedTemplate === 'facebook' ? (
+          <div className="w-full space-y-2 mb-3">
+            <FacebookHookControls
+              hookText={hookText}
+              onChange={setHookText}
+            />
+            {/* Compact Brightness & Contrast Adjust Bar */}
+            <div className="w-full flex items-center justify-between px-3 py-2 rounded-xl bg-[#1a1c21] border border-[#2f343e] shadow-sm">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold text-[#f4f3ef]">
+                  Photo Adjustments
+                </span>
+                <span className="text-[10px] text-[#8e95a0]">
+                  (Brightness & Contrast)
+                </span>
+              </div>
+              <AdjustmentControls
+                adjustments={adjustments}
+                onChange={setAdjustments}
+              />
+            </div>
+          </div>
+        ) : (
+          /* Existing Template: COLOR STYLE PRESETS */
+          <ColorPresetSelector
+            photo={photo}
+            selectedPreset={selectedPreset}
+            onSelectPreset={setSelectedPreset}
+          />
+        )}
+
+        {/* 4. COUNTRY FLAG STRIP (20 NATIONAL FLAGS WITH DYNAMIC PREVIEW) */}
+        <CountryFlagSelector
+          selectedCountry={selectedCountry}
+          onSelectCountry={setSelectedCountry}
         />
 
-        {/* 3. UPLOAD PHOTO & UPLOAD LOGO */}
+        {/* 5. UPLOAD PHOTO & UPLOAD LOGO */}
         <UploadControls
           photo={photo}
           logo={logo}
@@ -267,17 +402,15 @@ export default function App() {
           onLoadDemo={handleResetDemo}
         />
 
-        {/* 4. ONE LOGO CONTROLS SECTION */}
+        {/* 6. ONE LOGO CONTROLS SECTION */}
         <LogoControls
           placement={logoPlacement}
           onChange={setLogoPlacement}
           hasLogo={!!logo}
         />
 
-        {/* 5. FILE NAME, RESOLUTION MODE & DOWNLOAD */}
+        {/* 7. RESOLUTION MODE & DOWNLOAD */}
         <ExportSection
-          filename={filename}
-          onFilenameChange={setFilename}
           exportMode={exportMode}
           onExportModeChange={setExportMode}
           onDownloadPNG={handleDownloadPNG}
@@ -285,6 +418,27 @@ export default function App() {
           hasPhoto={!!photo}
           photoWidth={photo?.width}
           photoHeight={photo?.height}
+        />
+
+        {/* 8. DOWNLOAD FILENAME CONFIRMATION MODAL */}
+        <DownloadFilenameModal
+          isOpen={isFilenameModalOpen}
+          defaultFilename={suggestedFilename}
+          activeDimString={
+            exportMode === '4k'
+              ? '3840 × 4800 (4K Master)'
+              : `${photo?.width || 1200} × ${photo?.height || 1500} (1:1 Native)`
+          }
+          onConfirm={handleConfirmDownload}
+          onCancel={() => {
+            setIsFilenameModalOpen(false);
+            setRenderedBlob(null);
+            setExportProgress({
+              isExporting: false,
+              progress: 0,
+              statusText: '',
+            });
+          }}
         />
 
         {/* Minimal Footer */}
