@@ -48,7 +48,7 @@ export const TemplateSelector: React.FC<TemplateSelectorProps> = ({
       className="relative w-full mb-2.5 z-40"
       aria-label="Template Selector Dropdown"
     >
-      {/* Dropdown Trigger Button [TEMPLATE: Existing Template / Text Master ▼] */}
+      {/* Dropdown Trigger Button [TEMPLATE: Nostalgic Master / Text Master ▼] */}
       <button
         type="button"
         id="template-dropdown-btn"
@@ -65,7 +65,7 @@ export const TemplateSelector: React.FC<TemplateSelectorProps> = ({
               TEMPLATE:
             </span>
             <span className="text-xs font-semibold text-[#f4f3ef] truncate">
-              {isClassic ? 'Existing Template' : 'Text Master'}
+              {isClassic ? 'Nostalgic Master' : 'Text Master'}
             </span>
           </div>
         </div>
@@ -92,7 +92,7 @@ export const TemplateSelector: React.FC<TemplateSelectorProps> = ({
             Select Template Layout
           </div>
 
-          {/* Option 1: Existing Template */}
+          {/* Option 1: Nostalgic Master */}
           <button
             type="button"
             id="template-select-classic"
@@ -122,7 +122,7 @@ export const TemplateSelector: React.FC<TemplateSelectorProps> = ({
             <div className="flex-1 min-w-0">
               <div className="flex items-center justify-between mb-0.5">
                 <span className="text-xs font-semibold text-[#f4f3ef]">
-                  Existing Template
+                  Nostalgic Master
                 </span>
                 {isClassic && (
                   <Check className="w-4 h-4 text-[#d4af37] stroke-[2.5]" />

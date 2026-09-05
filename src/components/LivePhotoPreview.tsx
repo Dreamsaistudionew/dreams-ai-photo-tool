@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { ColorPresetId, LoadedImage, LogoPlacement, CountryId, TemplateId, HookTextConfig, Adjustments } from '../types';
 import { COLOR_PRESETS } from '../utils/colorPresets';
 import { calculateLogoRect, getStyledSpans } from '../utils/imageProcessor';
+import { calculateFitText } from '../utils/textFitter';
 import { countryFlags } from '../utils/countryFlags';
 import { Eye, EyeOff, Sparkles, Image as ImageIcon } from 'lucide-react';
 
@@ -139,6 +140,19 @@ export const LivePhotoPreview: React.FC<LivePhotoPreviewProps> = ({
     return getStyledSpans(hookText);
   }, [hookText]);
 
+  const fullText = useMemo(() => {
+    return styledSpans.map((s) => s.text).join('');
+  }, [styledSpans]);
+
+  // Unified automatic text resizing calculation (exact same algorithm and constants as export)
+  const textFit = useMemo(() => {
+    return calculateFitText({
+      text: fullText,
+      stripWidth: containerSize.width,
+      stripHeight: textStripHeight,
+    });
+  }, [fullText, containerSize.width, textStripHeight]);
+
   // Calculate logo position for preview within the photograph
   const logoRect = logo
     ? calculateLogoRect(
@@ -157,7 +171,7 @@ export const LivePhotoPreview: React.FC<LivePhotoPreviewProps> = ({
         <div className="flex items-center gap-2">
           <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium tracking-wide bg-[#1e2127] border border-[#2f343e] text-[#d4af37]">
             <span className="w-1.5 h-1.5 rounded-full bg-[#d4af37] animate-pulse"></span>
-            LIVE PREVIEW {isFacebook ? '(TEXT MASTER)' : '(EXISTING TEMPLATE)'}
+            LIVE PREVIEW {isFacebook ? '(TEXT MASTER)' : '(NOSTALGIC MASTER)'}
           </span>
           {photo && (
             <span className="text-[11px] text-[#9ba1a6] hidden sm:inline">
@@ -268,33 +282,47 @@ export const LivePhotoPreview: React.FC<LivePhotoPreviewProps> = ({
             {isFacebook && (
               <div
                 id="text-master-strip-preview"
-                className="absolute left-0 right-0 z-20 flex items-center justify-center px-3.5 text-center backdrop-blur-md transition-colors border-t border-white/10 overflow-hidden"
+                className="absolute left-0 right-0 z-20 flex items-center justify-center text-center backdrop-blur-md transition-colors border-t border-white/10 overflow-hidden"
                 style={{
                   bottom: `${colorStripHeight}px`,
                   height: `${textStripHeight}px`,
                   backgroundColor: sampledTone.overlayRgba,
+                  paddingLeft: `${textFit.paddingX}px`,
+                  paddingRight: `${textFit.paddingX}px`,
                 }}
               >
-                <div className="flex items-center justify-center flex-wrap gap-x-1.5 gap-y-0.5 max-w-full">
-                  {styledSpans.length > 0 ? (
-                    styledSpans.map((span, idx) => (
+                {styledSpans.length > 0 && fullText.trim() ? (
+                  <div
+                    id="text-master-rendered-line"
+                    className="flex items-center justify-center whitespace-nowrap select-none pointer-events-none"
+                    style={{
+                      fontFamily: textFit.fontFamily,
+                      fontWeight: textFit.fontWeight,
+                      fontSize: `${textFit.fontSize}px`,
+                      letterSpacing: `${textFit.letterSpacingEm}em`,
+                      textShadow: '0 1px 3px rgba(0, 0, 0, 0.85), 0 2px 6px rgba(0, 0, 0, 0.5)',
+                      transform: textFit.scaleRatio < 1 ? `scaleX(${textFit.scaleRatio})` : 'none',
+                      transformOrigin: 'center center',
+                      maxWidth: '100%',
+                    }}
+                  >
+                    {styledSpans.map((span, idx) => (
                       <span
                         key={idx}
-                        className="font-black text-xs sm:text-sm tracking-tight leading-tight inline-block whitespace-pre"
+                        className="whitespace-pre"
                         style={{
                           color: span.color,
-                          textShadow: '0 1px 3px rgba(0, 0, 0, 0.85), 0 2px 6px rgba(0, 0, 0, 0.5)',
                         }}
                       >
                         {span.text}
                       </span>
-                    ))
-                  ) : (
-                    <span className="text-[#9ba1a6] text-[11px] font-medium italic">
-                      [Enter Hook Strip Text Below]
-                    </span>
-                  )}
-                </div>
+                    ))}
+                  </div>
+                ) : (
+                  <span className="text-[#9ba1a6] text-[11px] font-medium italic">
+                    [Enter Hook Strip Text Below]
+                  </span>
+                )}
               </div>
             )}
 

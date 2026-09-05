@@ -35,7 +35,7 @@ import {
   DEFAULT_LOGO_NAME,
 } from './utils/sampleData';
 import { Shield, RefreshCw } from 'lucide-react';
-import dreamsAiLogo from './assets/images/dreams_ai_logo_1788188603339.jpg';
+import dreamsAiLogo from './assets/images/dreams_ai_logo_v2.png';
 
 export default function App() {
   // Master Photo State
@@ -246,7 +246,7 @@ export default function App() {
       // Generate suggested default filename based on selected template and selected country
       const countryConfig = countryFlags[selectedCountry];
       const countryName = (countryConfig?.name || 'Country').replace(/[^a-zA-Z0-9]/g, '');
-      const templatePrefix = selectedTemplate === 'facebook' ? 'TextMaster' : 'ClassicMaster';
+      const templatePrefix = selectedTemplate === 'facebook' ? 'TextMaster' : 'NostalgicMaster';
       const autoFilename = `${templatePrefix}_${countryName}.png`;
 
       setRenderedBlob(blob);
@@ -305,11 +305,13 @@ export default function App() {
         {/* Header: Brand DREAMS AI */}
         <header className="w-full flex items-center justify-between pb-3 mb-2 border-b border-[#22252c]">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-full overflow-hidden border border-[#d4af37]/60 flex items-center justify-center shadow-md bg-[#1a1c21] shrink-0 p-0.5">
+            <div className="w-9 h-9 rounded-full overflow-hidden flex items-center justify-center shrink-0 drop-shadow-sm">
               <img
                 src={dreamsAiLogo}
-                alt="DREAMS AI Logo"
-                className="w-full h-full object-cover rounded-full"
+                alt="Dreams AI Logo"
+                className="w-full h-full object-contain select-none"
+                loading="eager"
+                decoding="async"
                 referrerPolicy="no-referrer"
               />
             </div>
@@ -378,7 +380,7 @@ export default function App() {
             </div>
           </div>
         ) : (
-          /* Existing Template: COLOR STYLE PRESETS */
+          /* Nostalgic Master: COLOR STYLE PRESETS */
           <ColorPresetSelector
             photo={photo}
             selectedPreset={selectedPreset}

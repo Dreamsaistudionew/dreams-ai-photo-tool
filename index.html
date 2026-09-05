@@ -3,6 +3,48 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <script>
+      // Safeguard against third-party browser extension injection collisions (e.g. crypto wallet providers redefining window.ethereum)
+      (function() {
+        try {
+          var originalDefineProperty = Object.defineProperty;
+          Object.defineProperty = function(obj, prop, descriptor) {
+            if ((obj === window || obj === globalThis) && prop === 'ethereum') {
+              try {
+                return originalDefineProperty.call(this, obj, prop, Object.assign({}, descriptor, { configurable: true, writable: true }));
+              } catch (e) {
+                return obj;
+              }
+            }
+            return originalDefineProperty.apply(this, arguments);
+          };
+        } catch (e) {}
+
+        // Global error handler to capture and prevent extension collision errors from propagating
+        window.addEventListener('error', function(event) {
+          if (
+            event &&
+            event.message &&
+            (event.message.indexOf('ethereum') !== -1 || event.message.indexOf('Cannot redefine property') !== -1)
+          ) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            return true;
+          }
+        }, true);
+
+        window.addEventListener('unhandledrejection', function(event) {
+          if (
+            event &&
+            event.reason &&
+            String(event.reason).indexOf('ethereum') !== -1
+          ) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+          }
+        }, true);
+      })();
+    </script>
     <link rel="icon" type="image/png" href="dreams-ai-logo.png" />
     <link rel="apple-touch-icon" href="dreams-ai-logo.png" />
     <title>DREAMS AI — Premium 4:5 Photo Color & Logo Compositing</title>

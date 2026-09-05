@@ -2,6 +2,7 @@ import { ColorPresetId, LogoPlacement, ExportResolutionMode, CountryId, Template
 import { COLOR_PRESETS } from './colorPresets';
 import { drawCountryFlagStrip, countryFlags } from './countryFlags';
 import { isPngBuffer, setPngDpi, verifyPngMetadata } from './pngDpi';
+import { calculateFitText } from './textFitter';
 
 export const TARGET_4K_WIDTH = 3840;
 export const TARGET_4K_HEIGHT = 4800;
@@ -408,152 +409,60 @@ export function drawFacebookHookStrip(
     return;
   }
 
-  const fontFamily =
-    'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
+  const fullText = spans.map((s) => s.text).join('');
+  if (!fullText.trim()) {
+    ctx.restore();
+    return;
+  }
 
-  const paddingX = Math.round(width * 0.04);
-  const maxAvailableWidth = width - paddingX * 2;
+  // Unified automatic text resizing calculation (exact same as Live Preview)
+  const fit = calculateFitText({
+    text: fullText,
+    stripWidth: width,
+    stripHeight: height,
+  });
 
-  let fontSize = Math.round(height * 0.38);
-  ctx.font = `900 ${fontSize}px ${fontFamily}`;
+  ctx.font = `${fit.fontWeight} ${fit.fontSize}px ${fit.fontFamily}`;
   ctx.textBaseline = 'middle';
   ctx.shadowColor = 'rgba(0, 0, 0, 0.85)';
-  ctx.shadowBlur = Math.max(2, Math.round(fontSize * 0.12));
+  ctx.shadowBlur = Math.max(2, Math.round(fit.fontSize * 0.12));
   ctx.shadowOffsetX = 0;
-  ctx.shadowOffsetY = Math.max(1, Math.round(fontSize * 0.04));
+  ctx.shadowOffsetY = Math.max(1, Math.round(fit.fontSize * 0.04));
 
-  // Compute total width
-  let totalSingleLineWidth = 0;
-  for (const s of spans) {
-    totalSingleLineWidth += ctx.measureText(s.text).width;
+  if ('letterSpacing' in ctx) {
+    (ctx as any).letterSpacing = `${fit.letterSpacingEm}em`;
   }
 
-  if (totalSingleLineWidth <= maxAvailableWidth) {
-    // Fits on 1 line centered!
-    const startX = (width - totalSingleLineWidth) / 2;
-    const centerY = y + height / 2;
-    let currX = startX;
-
-    for (const s of spans) {
-      ctx.fillStyle = s.color;
-      ctx.fillText(s.text, currX, centerY);
-      currX += ctx.measureText(s.text).width;
+  // Accurately measure each span with letter spacing
+  const spanWidths = spans.map((s) => {
+    let w = ctx.measureText(s.text).width;
+    if (!('letterSpacing' in ctx) && fit.letterSpacingEm !== 0 && s.text.length > 0) {
+      w += s.text.length * (fit.letterSpacingEm * fit.fontSize);
     }
-  } else {
-    // Check if scaling down fits nicely on 1 line
-    const scale = maxAvailableWidth / totalSingleLineWidth;
-    if (scale >= 0.65) {
-      fontSize = Math.max(11, Math.round(fontSize * scale));
-      ctx.font = `900 ${fontSize}px ${fontFamily}`;
-      let scaledTotal = 0;
-      for (const s of spans) {
-        scaledTotal += ctx.measureText(s.text).width;
-      }
-      let currX = (width - scaledTotal) / 2;
-      const centerY = y + height / 2;
+    return w;
+  });
+  const totalSpanWidth = spanWidths.reduce((a, b) => a + b, 0);
 
-      for (const s of spans) {
-        ctx.fillStyle = s.color;
-        ctx.fillText(s.text, currX, centerY);
-        currX += ctx.measureText(s.text).width;
-      }
-    } else {
-      // 2-line layout
-      // Break spans into individual words/tokens while preserving their character/word colors
-      interface StyledWord {
-        chars: Array<{ char: string; color: string }>;
-        isSpace: boolean;
-      }
+  const centerY = y + height / 2;
 
-      const tokens: StyledWord[] = [];
-      let currentWord: StyledWord = { chars: [], isSpace: false };
-
-      for (const span of spans) {
-        for (const char of span.text) {
-          if (char === ' ') {
-            if (currentWord.chars.length > 0) {
-              tokens.push(currentWord);
-              currentWord = { chars: [], isSpace: false };
-            }
-            tokens.push({ chars: [{ char: ' ', color: span.color }], isSpace: true });
-          } else {
-            currentWord.chars.push({ char, color: span.color });
-          }
-        }
-      }
-      if (currentWord.chars.length > 0) {
-        tokens.push(currentWord);
-      }
-
-      fontSize = Math.max(11, Math.round(height * 0.28));
-      ctx.font = `900 ${fontSize}px ${fontFamily}`;
-
-      // Measure tokens
-      const tokenWidths = tokens.map((t) =>
-        t.chars.reduce((acc, c) => acc + ctx.measureText(c.char).width, 0)
-      );
-      const totalTokenWidth = tokenWidths.reduce((a, b) => a + b, 0);
-
-      // Find best split point near half width
-      let bestSplitIndex = Math.max(1, Math.floor(tokens.length / 2));
-      let runningWidth = 0;
-      let minDiff = Infinity;
-      for (let i = 0; i < tokens.length; i++) {
-        runningWidth += tokenWidths[i];
-        const diff = Math.abs(runningWidth - totalTokenWidth / 2);
-        if (tokens[i].isSpace && diff < minDiff) {
-          minDiff = diff;
-          bestSplitIndex = i + 1;
-        }
-      }
-
-      const line1Tokens = tokens.slice(0, bestSplitIndex);
-      const line2Tokens = tokens.slice(bestSplitIndex);
-
-      const renderTokenLine = (lineTokens: StyledWord[], lineY: number) => {
-        // Strip leading/trailing spaces
-        const trimmed = lineTokens.filter((t, idx) => {
-          if (t.isSpace && (idx === 0 || idx === lineTokens.length - 1)) return false;
-          return true;
-        });
-        const lineWidth = trimmed.reduce(
-          (sum, t) => sum + t.chars.reduce((acc, c) => acc + ctx.measureText(c.char).width, 0),
-          0
-        );
-        let startX = (width - lineWidth) / 2;
-        if (lineWidth > maxAvailableWidth) {
-          const lineScale = maxAvailableWidth / lineWidth;
-          const oldFont = ctx.font;
-          ctx.font = `900 ${Math.max(10, Math.round(fontSize * lineScale))}px ${fontFamily}`;
-          const newWidth = trimmed.reduce(
-            (sum, t) => sum + t.chars.reduce((acc, c) => acc + ctx.measureText(c.char).width, 0),
-            0
-          );
-          startX = (width - newWidth) / 2;
-          for (const t of trimmed) {
-            for (const c of t.chars) {
-              ctx.fillStyle = c.color;
-              ctx.fillText(c.char, startX, lineY);
-              startX += ctx.measureText(c.char).width;
-            }
-          }
-          ctx.font = oldFont;
-        } else {
-          for (const t of trimmed) {
-            for (const c of t.chars) {
-              ctx.fillStyle = c.color;
-              ctx.fillText(c.char, startX, lineY);
-              startX += ctx.measureText(c.char).width;
-            }
-          }
-        }
-      };
-
-      renderTokenLine(line1Tokens, y + height * 0.32);
-      renderTokenLine(line2Tokens, y + height * 0.69);
-    }
+  ctx.save();
+  if (fit.scaleRatio < 1) {
+    // Horizontal scale safeguard if text reaches extreme lengths at min font size
+    ctx.translate(width / 2, centerY);
+    ctx.scale(fit.scaleRatio, 1);
+    ctx.translate(-width / 2, -centerY);
   }
 
+  // Horizontally centered
+  let currX = (width - totalSpanWidth) / 2;
+  for (let i = 0; i < spans.length; i++) {
+    const s = spans[i];
+    ctx.fillStyle = s.color;
+    ctx.fillText(s.text, currX, centerY);
+    currX += spanWidths[i];
+  }
+
+  ctx.restore();
   ctx.restore();
 }
 
@@ -686,7 +595,7 @@ export async function renderMasterCompositePNG({
   onProgress?.(
     30,
     exportMode === '4k'
-      ? `Allocating master 4K canvas (${finalWidth} × ${finalHeight}px, ${isFacebookTemplate ? 'Text Master Template' : 'Existing Template'})...`
+      ? `Allocating master 4K canvas (${finalWidth} × ${finalHeight}px, ${isFacebookTemplate ? 'Text Master Template' : 'Nostalgic Master Template'})...`
       : `Allocating canvas at exact original dimensions (${finalWidth} × ${finalHeight}px)...`
   );
 
